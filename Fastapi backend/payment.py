@@ -136,9 +136,10 @@ def create_payment_order(req: CreateOrderRequest):
 
 
 class VerifyPaymentRequest(BaseModel):
-    donor_id: int
     ngo_id: int
     amount: float
+    donor_id: Optional[int] = None          # Donors.DonorID
+    donor_user_id: Optional[int] = None     # Users.UserID (app usually has this)
     payment_method: str = "UPI"
     razorpay_order_id: Optional[str] = None
     razorpay_payment_id: Optional[str] = None
@@ -162,11 +163,16 @@ def verify_and_record_payment(req: VerifyPaymentRequest):
         except Exception:
             raise HTTPException(status_code=400, detail="❌ Payment signature verification failed")
 
-    # 2. Resolve donor + ngo userIDs
-    cursor.execute("SELECT userid FROM Donors WHERE donorid = %s;", (req.donor_id,))
+    # 2. Resolve donor + ngo userIDs (accept either DonorID or a Users.UserID)
+    if req.donor_id is not None:
+        cursor.execute("SELECT userid FROM Donors WHERE donorid = %s;", (req.donor_id,))
+    elif req.donor_user_id is not None:
+        cursor.execute("SELECT userid FROM Donors WHERE userid = %s;", (req.donor_user_id,))
+    else:
+        raise HTTPException(status_code=400, detail="Provide donor_id or donor_user_id")
     donor_row = cursor.fetchone()
     if not donor_row:
-        raise HTTPException(status_code=404, detail=f"Donor {req.donor_id} not found")
+        raise HTTPException(status_code=404, detail="Donor not found")
     cursor.execute("SELECT userid FROM NGOs WHERE ngoid = %s;", (req.ngo_id,))
     ngo_row = cursor.fetchone()
     if not ngo_row:
